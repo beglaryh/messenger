@@ -1,19 +1,18 @@
 package message
 
 import (
-	"github.com/beglaryh/gocommon/time/localdate"
-	"github.com/google/uuid"
+	"github.com/beglaryh/gocommon/time/offsetdatetime"
 )
 
 type Message struct {
-	CreatedOn  localdate.LocalDate
-	ModifiedOn localdate.LocalDate
+	CreatedOn  offsetdatetime.OffsetDateTime `json:"createdOn"`
+	ModifiedOn offsetdatetime.OffsetDateTime `json:"modifiedOn"`
 
-	Message string
+	Id     string `json:"id"`
+	RoomId string `json:"roomId"`
+	SentBy string `json:"sentBy"`
 
-	Id     uuid.UUID
-	RoomId uuid.UUID
-	UserId uuid.UUID
-
-	IsEdited bool
+	Message  string   `json:"message"`
+	Members  []string `json:"-"`
+	IsEdited bool     `json:"isEdited"`
 }

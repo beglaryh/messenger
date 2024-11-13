@@ -9,6 +9,7 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/beglaryh/messenger/domain/connection"
 	"github.com/beglaryh/messenger/infrastructure/database"
 )
 
@@ -26,7 +27,7 @@ func handler(_ context.Context, r events.APIGatewayWebsocketProxyRequest) (event
 		}, errors.New("bad request")
 	}
 
-	if err := db.SaveConnection(cid, uid); err != nil {
+	if err := db.SaveConnection(connection.New(cid, uid)); err != nil {
 		log.Println(err)
 		return events.APIGatewayProxyResponse{
 			StatusCode: 500,

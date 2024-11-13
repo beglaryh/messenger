@@ -3,8 +3,10 @@ package item
 type EntityType string
 
 const (
-	Room       EntityType = "Room"
-	Member     EntityType = "Member"
-	Message    EntityType = "Message"
-	Connection EntityType = "Connection"
+	Room             EntityType = "R"
+	Member           EntityType = "MBR"
+	RoomMessage      EntityType = "RM"
+	UserMessage      EntityType = "UM"
+	Connection       EntityType = "C"
+	ConnectionHeader EntityType = "CH"
 )

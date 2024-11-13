@@ -10,11 +10,9 @@ type RoomItem struct {
 	PK         string          `dynamodbav:"pk"`
 	SK         string          `dynamodbav:"sk"`
 	EntityType item.EntityType `dynamodbav:"entityType"`
-
-	CreatedOn string `dynamodbav:"createdOn"`
-	CreatedBy string `dynamodbav:"CreatedBy"`
-
-	Members []string `dynamodbav:"Members"`
+	CreatedOn  string          `dynamodbav:"createdOn"`
+	CreatedBy  string          `dynamodbav:"createdBy"`
+	Members    []string        `dynamodbav:"members"`
 }
 
 const SK = "R"

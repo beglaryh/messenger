@@ -13,13 +13,16 @@ import (
 	"github.com/beglaryh/gocommon/errors"
 	"github.com/beglaryh/gocommon/optional"
 	"github.com/beglaryh/gocommon/stream"
+	"github.com/beglaryh/messenger/domain/connection"
 	"github.com/beglaryh/messenger/domain/message"
 	"github.com/beglaryh/messenger/domain/room"
-	"github.com/beglaryh/messenger/infrastructure/item/connection"
+	"github.com/beglaryh/messenger/infrastructure/item"
+	"github.com/beglaryh/messenger/infrastructure/item/connectionheaderitem"
+	"github.com/beglaryh/messenger/infrastructure/item/connectionroomitem"
 	"github.com/beglaryh/messenger/infrastructure/item/member"
-	messageitem "github.com/beglaryh/messenger/infrastructure/item/message"
+	"github.com/beglaryh/messenger/infrastructure/item/messageroomitem"
+	"github.com/beglaryh/messenger/infrastructure/item/messageuseritem"
 	roomitem "github.com/beglaryh/messenger/infrastructure/item/room"
-	"github.com/google/uuid"
 )
 
 type DB struct {
@@ -29,6 +32,13 @@ type DB struct {
 type primaryKey struct {
 	pk string
 	sk string
+}
+
+func (pk primaryKey) toAVMap() map[string]types.AttributeValue {
+	return map[string]types.AttributeValue{
+		"pk": &types.AttributeValueMemberS{Value: pk.pk},
+		"sk": &types.AttributeValueMemberS{Value: pk.sk},
+	}
 }
 
 var (
@@ -60,62 +70,169 @@ func (db *DB) SaveRoom(room room.Room) error {
 		items[i+1] = item
 	}
 
-	return db.batchInsertion(items)
+	return db.batchInsertion(&items)
 }
 
-func (db *DB) GetRoomHeader(id uuid.UUID) optional.Optional[room.Room] {
-	key := map[string]types.AttributeValue{
-		"pk": &types.AttributeValueMemberS{Value: id},
-		"sk": &types.AttributeValueMemberS{Value: roomitem.SK},
-	}
-	o, err := db.client.GetItem(context.TODO(), &dynamodb.GetItemInput{
-		TableName: &table,
-		Key:       key,
-	})
+func (db *DB) GetRoomHeader(id string) optional.Optional[room.Room] {
+	item, err := getItem[roomitem.RoomItem](db.client, primaryKey{id, roomitem.SK})
 	if err != nil {
 		log.Println(err)
-		return optional.Empty[room.Room]()
-	}
-	var item roomitem.RoomItem
-	if err := attributevalue.UnmarshalMap(o.Item, &item); err != nil {
-		log.Print(err)
 		return optional.Empty[room.Room]()
 	}
 
 	return optional.With(item.To())
 }
 
-func (db *DB) AppendRoomToConnection(cid string, room room.Room) error {
-	citem := connection.New(cid, room.Id.String(), room.CreatedBy)
-	item, _ := attributevalue.MarshalMap(citem)
-	return db.putItem(item)
+func (db *DB) AppendRoomToConnections(cs []connection.Connection, room room.Room) error {
+	items := make([]map[string]types.AttributeValue, len(cs))
+	for i, c := range cs {
+		item := connectionroomitem.New(c.ID, room.Id.String(), c.UID)
+		av, _ := attributevalue.MarshalMap(item)
+		items[i] = av
+	}
+	return db.batchInsertion(&items)
 }
 
 func (db *DB) SaveMessage(message message.Message) error {
-	item, _ := attributevalue.MarshalMap(messageitem.From(message))
-	return db.putItem(item)
+	roomItem := messageroomitem.From(message)
+	userItems := messageuseritem.From(message)
+
+	items := make([]map[string]types.AttributeValue, len(*userItems)+1)
+
+	item, _ := attributevalue.MarshalMap(roomItem)
+	items[0] = item
+	for i, e := range *userItems {
+		item, _ := attributevalue.MarshalMap(e)
+		items[i+1] = item
+	}
+
+	return db.batchInsertion(&items)
 }
 
-func (db *DB) SaveConnection(connectionId, userId string) error {
-	roomsIds, err := db.fetchRoomsByUserId(userId)
+func (db *DB) SaveConnection(c connection.Connection) error {
+	roomsIds, err := db.fetchRoomsByUserId(c.UID)
 	if err != nil {
 		return err
 	}
+	ch := connectionheaderitem.From(c)
+
 	items := make([]map[string]types.AttributeValue, len(roomsIds)+1)
 
-	items[0] = map[string]types.AttributeValue{
-		"pk":         &types.AttributeValueMemberS{Value: connectionId},
-		"sk":         &types.AttributeValueMemberS{Value: userId},
-		"entityType": &types.AttributeValueMemberS{Value: "ConnectionHeader"},
-	}
+	chItem, _ := attributevalue.MarshalMap(ch)
+	items[0] = chItem
 
 	for i, roomId := range roomsIds {
-		connectionItem := connection.New(connectionId, roomId, userId)
+		connectionItem := connectionroomitem.New(c.ID, roomId, c.UID)
 		item, _ := attributevalue.MarshalMap(connectionItem)
 		items[i+1] = item
 	}
 
-	return db.batchInsertion(items)
+	return db.batchInsertion(&items)
+}
+
+func (db *DB) GetMessagesAfter(mid, uid string) (*[]message.Message, error) {
+	if len(mid) == 0 {
+		mid = "0"
+	}
+	keyEx := expression.Key("gsi1pk").Equal(expression.Value(uid)).
+		And(expression.Key("gsi1sk").GreaterThan(expression.Value("M#" + mid)))
+	exp, _ := expression.NewBuilder().WithKeyCondition(keyEx).
+		WithFilter(expression.Equal(expression.Name("entityType"), expression.Value(item.UserMessage))).
+		Build()
+
+	queryInput := dynamodb.QueryInput{
+		TableName:                 &table,
+		IndexName:                 &gsi1,
+		ExpressionAttributeNames:  exp.Names(),
+		ExpressionAttributeValues: exp.Values(),
+		KeyConditionExpression:    exp.KeyCondition(),
+		FilterExpression:          exp.Filter(),
+	}
+	paginator := dynamodb.NewQueryPaginator(db.client, &queryInput)
+	messages := []message.Message{}
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(context.TODO())
+		if err != nil {
+			log.Println(err)
+			return nil, errors.DefaultInternalError
+		}
+		items := make([]messageuseritem.MessageUserItem, page.Count)
+		attributevalue.UnmarshalListOfMaps(page.Items, &items)
+		msgs := messageuseritem.To(&items)
+		messages = append(messages, msgs...)
+	}
+	return &messages, nil
+}
+
+func (db *DB) GetConnection(cid string) (connection.Connection, error) {
+	item, err := getItem[connectionheaderitem.ConnectionHeaderItem](db.client, primaryKey{cid, connectionheaderitem.CH_SK})
+	if err != nil {
+		return connection.Connection{}, err
+	}
+	return item.To(), nil
+}
+
+func (db *DB) GetConnectionsByUserId(uid string) ([]connection.Connection, error) {
+	keyEx := expression.Key("gsi1pk").Equal(expression.Value(uid)).
+		And(expression.Key("gsi1sk").BeginsWith(connectionheaderitem.CH_GSI1SK_PREXIF))
+	exp, _ := expression.NewBuilder().WithKeyCondition(keyEx).Build()
+	input := dynamodb.QueryInput{
+		TableName:                 &table,
+		IndexName:                 &gsi1,
+		ExpressionAttributeNames:  exp.Names(),
+		ExpressionAttributeValues: exp.Values(),
+		KeyConditionExpression:    exp.KeyCondition(),
+	}
+
+	response, err := db.client.Query(context.TODO(), &input)
+	if err != nil {
+		log.Println(err)
+		return make([]connection.Connection, 0), errors.DefaultInternalError
+	}
+
+	connections := make([]connection.Connection, len(response.Items))
+	for i, item := range response.Items {
+		var ch connectionheaderitem.ConnectionHeaderItem
+		err := attributevalue.UnmarshalMap(item, &ch)
+		if err != nil {
+			log.Println(err)
+			return make([]connection.Connection, 0), errors.DefaultInternalError
+		}
+		connections[i] = ch.To()
+	}
+	return connections, nil
+}
+
+func (db *DB) GetConnectionsByRoom(rid string) ([]connectionroomitem.ConnectionRoomItem, error) {
+	keyEx := expression.
+		Key("gsi1pk").Equal(expression.Value(rid)).
+		And(expression.KeyBeginsWith(expression.Key("gsi1sk"), "U#"))
+
+	exp, _ := expression.NewBuilder().WithKeyCondition(keyEx).Build()
+
+	queryInput := dynamodb.QueryInput{
+		TableName:                 &table,
+		IndexName:                 &gsi1,
+		ExpressionAttributeNames:  exp.Names(),
+		ExpressionAttributeValues: exp.Values(),
+		KeyConditionExpression:    exp.KeyCondition(),
+	}
+	queryPaginator := dynamodb.NewQueryPaginator(db.client, &queryInput)
+	connections := arraylist.New[connectionroomitem.ConnectionRoomItem]()
+	for queryPaginator.HasMorePages() {
+		response, err := queryPaginator.NextPage(context.TODO())
+		if err != nil {
+			log.Println(err)
+			return connections.ToArray(), errors.DefaultInternalError
+		}
+		var items []connectionroomitem.ConnectionRoomItem
+		attributevalue.UnmarshalListOfMaps(response.Items, &items)
+		for _, m := range items {
+			connections.Add(m)
+		}
+	}
+
+	return connections.ToArray(), nil
 }
 
 func (db *DB) RemoveConnection(cid string) error {
@@ -167,8 +284,8 @@ func (db *DB) putItem(item map[string]types.AttributeValue) error {
 	return nil
 }
 
-func (db *DB) batchInsertion(items []map[string]types.AttributeValue) error {
-	total := len(items)
+func (db *DB) batchInsertion(items *[]map[string]types.AttributeValue) error {
+	total := len(*items)
 
 	for i := 0; i < total; {
 		j := i + BATCH_SIZE
@@ -176,7 +293,7 @@ func (db *DB) batchInsertion(items []map[string]types.AttributeValue) error {
 			j = total
 		}
 
-		batchItems := items[i:j]
+		batchItems := (*items)[i:j]
 		batch := stream.Map(batchItems, func(item map[string]types.AttributeValue) types.WriteRequest {
 			return types.WriteRequest{
 				PutRequest: &types.PutRequest{
@@ -262,4 +379,23 @@ func (db *DB) fetchRoomsByUserId(userId string) ([]string, error) {
 		}
 	}
 	return rooms.ToArray(), nil
+}
+
+func getItem[E any](client *dynamodb.Client, primaryKey primaryKey) (E, error) {
+	o, err := client.GetItem(context.TODO(), &dynamodb.GetItemInput{
+		TableName: &table,
+		Key:       primaryKey.toAVMap(),
+	})
+
+	var item E
+	if err != nil {
+		log.Println(err)
+		return item, errors.DefaultInternalError
+	}
+	if err := attributevalue.UnmarshalMap(o.Item, &item); err != nil {
+		log.Print(err)
+		return item, errors.DefaultInternalError
+	}
+
+	return item, nil
 }

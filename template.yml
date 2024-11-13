@@ -170,6 +170,227 @@ Resources:
         - '/'
         - - 'integrations'
           - !Ref MessengerOnDisconnectIntegration
+   
+  MessengerRoomCreateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: hrach-lambda-dev-build
+        Key: messenger.roomcreate.zip
+      Handler: bootstrap
+      FunctionName: messenger-room-create
+      Architectures:
+        - x86_64
+      Runtime: provided.al2023
+      Timeout: 30
+      MemorySize: 128
+      AutoPublishAlias: live
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - apigateway:POST
+                - apigateway:GET
+                - apigateway:PATCH
+                - apigateway:PUT 
+                - dynamodb:BatchWriteItem
+                - dynamodb:PutItem
+                - dynamodb:UpdateItem
+                - dynamodb:DeleteItem
+                - dynamodb:GetItem
+                - dynamodb:Query
+                - execute-api:ManageConnections
+                - execute-api:Invoke
+              Resource:
+                - '*'                            
+
+
+  MessengerRoomCreateFunctionLogGroup:
+    Type: 'AWS::Logs::LogGroup'
+    DependsOn: 'MessengerRoomCreateFunction'
+    Properties:
+      RetentionInDays: 1
+      LogGroupName: !Join [ '', [ '/aws/lambda/', !Ref MessengerRoomCreateFunction ] ]
+  
+  MessengerRoomCreateInvokePermission:
+    Type: "AWS::Lambda::Permission"
+    DependsOn: MessengerRoomCreateFunction
+    Properties:
+      FunctionName:
+        Ref: "MessengerRoomCreateFunction"
+      Action: "lambda:InvokeFunction"
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApiGateway}/*' 
+  
+  MessengerRoomCreateIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref WebSocketApiGateway
+      Description: Room Create Integration
+      IntegrationType: AWS_PROXY
+      IntegrationUri:
+        Fn::Sub:
+            arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${MessengerRoomCreateFunction.Arn}/invocations
+  MessengerRoomCreateRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApiGateway
+      RouteKey: roomCreate
+      AuthorizationType: NONE
+      OperationName: RoomCreateRoute 
+      Target: !Join
+        - '/'
+        - - 'integrations'
+          - !Ref MessengerRoomCreateIntegration
+  
+  MessengerSendMessageFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: hrach-lambda-dev-build
+        Key: messenger.sendmessage.zip
+      Handler: bootstrap
+      FunctionName: messenger-send-message
+      Architectures:
+        - x86_64
+      Runtime: provided.al2023
+      Timeout: 30
+      MemorySize: 128
+      AutoPublishAlias: live
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - apigateway:POST
+                - apigateway:GET
+                - apigateway:PATCH
+                - apigateway:PUT 
+                - dynamodb:BatchWriteItem
+                - dynamodb:PutItem
+                - dynamodb:UpdateItem
+                - dynamodb:DeleteItem
+                - dynamodb:GetItem
+                - dynamodb:Query
+                - execute-api:ManageConnections
+                - execute-api:Invoke
+              Resource:
+                - '*'                            
+                - 'arn:aws:execute-api:*:*:**/@connections/*'
+
+  MessengerSendMessageFunctionLogGroup:
+    Type: 'AWS::Logs::LogGroup'
+    DependsOn: 'MessengerSendMessageFunction'
+    Properties:
+      RetentionInDays: 1
+      LogGroupName: !Join [ '', [ '/aws/lambda/', !Ref MessengerSendMessageFunction ] ]
+  
+  MessengerSendMessageInvokePermission:
+    Type: "AWS::Lambda::Permission"
+    DependsOn: MessengerSendMessageFunction
+    Properties:
+      FunctionName:
+        Ref: "MessengerSendMessageFunction"
+      Action: "lambda:InvokeFunction"
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApiGateway}/*' 
+  
+  MessengerSendMessageIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref WebSocketApiGateway
+      Description: Room Create Integration
+      IntegrationType: AWS_PROXY
+      IntegrationUri:
+        Fn::Sub:
+            arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${MessengerSendMessageFunction.Arn}/invocations
+  
+  MessengerSendMessageRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApiGateway
+      RouteKey: sendMessage
+      AuthorizationType: NONE
+      OperationName: SendMessageRoute
+      Target: !Join
+        - '/'
+        - - 'integrations'
+          - !Ref MessengerSendMessageIntegration
+  
+  MessengerFetchFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: hrach-lambda-dev-build
+        Key: messenger.fetch.zip
+      Handler: bootstrap
+      FunctionName: messenger-fetch
+      Architectures:
+        - x86_64
+      Runtime: provided.al2023
+      Timeout: 30
+      MemorySize: 128
+      AutoPublishAlias: live
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - apigateway:POST
+                - apigateway:GET
+                - apigateway:PATCH
+                - apigateway:PUT 
+                - dynamodb:BatchWriteItem
+                - dynamodb:PutItem
+                - dynamodb:UpdateItem
+                - dynamodb:DeleteItem
+                - dynamodb:GetItem
+                - dynamodb:Query
+                - execute-api:ManageConnections
+                - execute-api:Invoke
+              Resource:
+                - '*'                            
+                - 'arn:aws:execute-api:*:*:**/@connections/*'
+
+  MessengerFetchFunctionLogGroup:
+    Type: 'AWS::Logs::LogGroup'
+    DependsOn: 'MessengerFetchFunction'
+    Properties:
+      RetentionInDays: 1
+      LogGroupName: !Join [ '', [ '/aws/lambda/', !Ref MessengerFetchFunction ] ]
+  
+  MessengerFetchInvokePermission:
+    Type: "AWS::Lambda::Permission"
+    DependsOn: MessengerFetchFunction
+    Properties:
+      FunctionName:
+        Ref: "MessengerFetchFunction"
+      Action: "lambda:InvokeFunction"
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApiGateway}/*' 
+  
+  MessengerFetchIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref WebSocketApiGateway
+      Description: Fetch Mesages 
+      IntegrationType: AWS_PROXY
+      IntegrationUri:
+        Fn::Sub:
+            arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${MessengerFetchFunction.Arn}/invocations
+  
+  MessengerFetchRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApiGateway
+      RouteKey: fetch
+      AuthorizationType: NONE
+      OperationName: FetchMessagesRoute
+      Target: !Join
+        - '/'
+        - - 'integrations'
+          - !Ref MessengerFetchIntegration 
   
   MessengerDynamoDBTable:
     Type: AWS::DynamoDB::Table
