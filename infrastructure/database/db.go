@@ -14,6 +14,7 @@ import (
 	"github.com/beglaryh/gocommon/optional"
 	"github.com/beglaryh/gocommon/stream"
 	"github.com/beglaryh/messenger/domain/connection"
+	request "github.com/beglaryh/messenger/domain/editrequest"
 	"github.com/beglaryh/messenger/domain/message"
 	"github.com/beglaryh/messenger/domain/room"
 	"github.com/beglaryh/messenger/infrastructure/item"
@@ -107,6 +108,44 @@ func (db *DB) SaveMessage(message message.Message) error {
 	}
 
 	return db.batchInsertion(&items)
+}
+
+func (db *DB) EditMessage(editRequest request.EditRequest) (message.Message, error) {
+	keyEx := expression.Key("pk").Equal(expression.Value(editRequest.MID))
+	exp, _ := expression.NewBuilder().WithKeyCondition(keyEx).Build()
+	input := dynamodb.QueryInput{
+		TableName:                 aws.String(table),
+		KeyConditionExpression:    exp.KeyCondition(),
+		ExpressionAttributeNames:  exp.Names(),
+		ExpressionAttributeValues: exp.Values(),
+	}
+
+	o, err := db.client.Query(context.TODO(), &input)
+	if err != nil {
+		log.Println(err)
+		return message.Message{}, errors.DefaultInternalError
+	}
+	updates := make([]map[string]types.AttributeValue, o.Count)
+
+	var roomMessage messageroomitem.MessageRoomItem
+	for i, e := range o.Items {
+		e["modifiedOn"] = &types.AttributeValueMemberS{Value: editRequest.ModifiedOn.String()}
+		e["isEdited"] = &types.AttributeValueMemberBOOL{Value: true}
+		e["message"] = &types.AttributeValueMemberS{Value: editRequest.Message}
+		updates[i] = e
+		eType := e["entityType"]
+		entityType := eType.(*types.AttributeValueMemberS)
+		if entityType.Value == string(item.RoomMessage) {
+			attributevalue.UnmarshalMap(e, &roomMessage)
+		}
+	}
+
+	if err = db.batchInsertion(&updates); err != nil {
+		log.Println(err)
+		return message.Message{}, errors.DefaultInternalError
+	}
+
+	return roomMessage.To(), nil
 }
 
 func (db *DB) SaveConnection(c connection.Connection) error {

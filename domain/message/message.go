@@ -6,7 +6,7 @@ import (
 
 type Message struct {
 	CreatedOn  offsetdatetime.OffsetDateTime `json:"createdOn"`
-	ModifiedOn offsetdatetime.OffsetDateTime `json:"modifiedOn"`
+	ModifiedOn offsetdatetime.OffsetDateTime `json:"modifiedOn,omitempty"`
 
 	Id     string `json:"id"`
 	RoomId string `json:"roomId"`

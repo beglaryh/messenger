@@ -8,7 +8,6 @@ Current features supported:
 - Fetch unread messages
 
 Features Pending:
-- Edit messages
 - React to messages
 - Send media
 
@@ -19,7 +18,7 @@ Features Pending:
 Post Message 
 ```json
 {
-  "action" : "roomCreate",
+  "action" : "createRoom",
   "message" : {
     "name" : "MyRoom",
     "members" : ["u1", "u2"]
@@ -35,12 +34,24 @@ Response
 ## Send Message
 ```json
 {
-  "action" : "sendMessage",
+  "action" : "send",
   "message" : {
     "roomId" : "b4adcc8e-45e6-4bf9-917a-2724fb98d82b"
     "message" : "Hello, World!",
     "sentBy" : "u1" 
   }
+}
+```
+Response
+```json
+{
+  "id" : "e36faf3c-3887-401b-91ec-8b4e634ad57d",
+  "roomId" : "b4adcc8e-45e6-4bf9-917a-2724fb98d82b",
+  "message" : "Hello, World!",
+  "sentBy" : "u1",
+  "isEdited" : false,
+  "createdOn" : "2024-01-01T08:01:00Z",
+
 }
 ```
 Note: The `sentBy` field will be deprecated. 
@@ -73,5 +84,17 @@ Response
       "isEdited" : false
     }
   ]
+}
+```
+
+## Edit Message
+Request
+```json
+{
+  "action" : "edit",
+  "message" : {
+    "messageId" : "dc8be21d-60fe-4414-ba01-dfd43764bb05",
+    "message" : "Typo!"
+  }
 }
 ```

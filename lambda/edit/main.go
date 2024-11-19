@@ -9,11 +9,9 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/apigatewaymanagementapi"
-	"github.com/beglaryh/gocommon/time/offsetdatetime"
 	"github.com/beglaryh/messenger/infrastructure/database"
 	"github.com/beglaryh/messenger/lambda/common"
-	"github.com/beglaryh/messenger/presentation/item/sendmessage"
-	"github.com/google/uuid"
+	"github.com/beglaryh/messenger/presentation/item/editrequestitem"
 )
 
 var (
@@ -22,10 +20,7 @@ var (
 )
 
 func handler(_ context.Context, r events.APIGatewayWebsocketProxyRequest) (events.APIGatewayProxyResponse, error) {
-	cid := r.RequestContext.ConnectionID
-	conn, _ := db.GetConnection(cid)
-
-	var item sendmessage.SendMessageItem
+	var item editrequestitem.EditRequest
 
 	if err := json.Unmarshal([]byte(r.Body), &item); err != nil {
 		log.Println(err)
@@ -33,28 +28,10 @@ func handler(_ context.Context, r events.APIGatewayWebsocketProxyRequest) (event
 			StatusCode: 500,
 		}, nil
 	}
-	roomOpt := db.GetRoomHeader(item.Message.RoomId)
-	if roomOpt.IsEmpty() {
-		log.Println("room not found: " + item.Message.RoomId)
-		return events.APIGatewayProxyResponse{StatusCode: 400}, nil
-	}
-	room, _ := roomOpt.Get()
-	message := item.Message
-	message.Members = room.Members
-	message.SentBy = conn.UID
 
-	mid, err := uuid.NewV7()
+	message, err := db.EditMessage(item.Message.To())
 	if err != nil {
-		log.Println(err)
 		return events.APIGatewayProxyResponse{StatusCode: 500}, nil
-	}
-	message.Id = mid.String()
-	message.CreatedOn = offsetdatetime.Now()
-
-	if err := db.SaveMessage(message); err != nil {
-		return events.APIGatewayProxyResponse{
-			StatusCode: 500,
-		}, nil
 	}
 
 	connections, err := db.GetConnectionsByRoom(message.RoomId)

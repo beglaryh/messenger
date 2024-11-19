@@ -36,3 +36,9 @@ fetch:
 	mv messenger.fetch.zip bin/fetch/messenger.fetch.zip
 	rm bootstrap
 
+edit:
+	GOARCH=amd64 GOOS=linux go build -tags="lambda.norpc" -ldflags="-w -s" -o bin/edit/bootstrap lambda/edit/main.go
+	cp bin/edit/bootstrap ./
+	zip messenger.edit.zip bootstrap
+	mv messenger.edit.zip bin/edit/messenger.edit.zip
+	rm bootstrap

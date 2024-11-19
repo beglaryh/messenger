@@ -15,6 +15,8 @@ type MessageRoomItem struct {
 	EntityType item.EntityType `dynamodbav:"entityType"`
 	CreatedOn  string          `dynamodbav:"createdOn"`
 	CreatedBy  string          `dynamodbav:"createdBy"`
+	ModifiedOn string          `dynamodbav:"modifiedOn"`
+	IsEdited   bool            `dynamodbav:"isEdited"`
 }
 
 const (
@@ -30,6 +32,7 @@ func From(m message.Message) MessageRoomItem {
 		GSI1SK:     "M#" + m.Id,
 		EntityType: item.RoomMessage,
 		Message:    m.Message,
+		IsEdited:   m.IsEdited,
 		CreatedOn:  m.CreatedOn.String(),
 		CreatedBy:  m.SentBy,
 	}
@@ -37,11 +40,14 @@ func From(m message.Message) MessageRoomItem {
 
 func (item MessageRoomItem) To() message.Message {
 	createdOn, _ := offsetdatetime.Parse(item.CreatedOn)
+	modifiedOn, _ := offsetdatetime.Parse(item.ModifiedOn)
 	return message.Message{
-		Id:        item.SK[2:],
-		RoomId:    item.PK,
-		Message:   item.Message,
-		SentBy:    item.CreatedBy,
-		CreatedOn: createdOn,
+		Id:         item.PK,
+		RoomId:     item.GSI1PK,
+		Message:    item.Message,
+		SentBy:     item.CreatedBy,
+		IsEdited:   item.IsEdited,
+		CreatedOn:  createdOn,
+		ModifiedOn: modifiedOn,
 	}
 }

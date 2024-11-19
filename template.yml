@@ -236,7 +236,7 @@ Resources:
     Type: AWS::ApiGatewayV2::Route
     Properties:
       ApiId: !Ref WebSocketApiGateway
-      RouteKey: roomCreate
+      RouteKey: createRoom
       AuthorizationType: NONE
       OperationName: RoomCreateRoute 
       Target: !Join
@@ -310,7 +310,7 @@ Resources:
     Type: AWS::ApiGatewayV2::Route
     Properties:
       ApiId: !Ref WebSocketApiGateway
-      RouteKey: sendMessage
+      RouteKey: send
       AuthorizationType: NONE
       OperationName: SendMessageRoute
       Target: !Join
@@ -318,6 +318,81 @@ Resources:
         - - 'integrations'
           - !Ref MessengerSendMessageIntegration
   
+  MessengerEditFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: hrach-lambda-dev-build
+        Key: messenger.edit.zip
+      Handler: bootstrap
+      FunctionName: messenger-edit
+      Architectures:
+        - x86_64
+      Runtime: provided.al2023
+      Timeout: 30
+      MemorySize: 128
+      AutoPublishAlias: live
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - apigateway:POST
+                - apigateway:GET
+                - apigateway:PATCH
+                - apigateway:PUT 
+                - dynamodb:BatchWriteItem
+                - dynamodb:PutItem
+                - dynamodb:UpdateItem
+                - dynamodb:DeleteItem
+                - dynamodb:GetItem
+                - dynamodb:Query
+                - execute-api:ManageConnections
+                - execute-api:Invoke
+              Resource:
+                - '*'                            
+                - 'arn:aws:execute-api:*:*:**/@connections/*'
+
+  MessengerEditFunctionLogGroup:
+    Type: 'AWS::Logs::LogGroup'
+    DependsOn: 'MessengerEditFunction'
+    Properties:
+      RetentionInDays: 1
+      LogGroupName: !Join [ '', [ '/aws/lambda/', !Ref MessengerEditFunction ] ]
+  
+  MessengerEditInvokePermission:
+    Type: "AWS::Lambda::Permission"
+    DependsOn: MessengerEditFunction
+    Properties:
+      FunctionName:
+        Ref: "MessengerEditFunction"
+      Action: "lambda:InvokeFunction"
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApiGateway}/*' 
+  
+  MessengerEditIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref WebSocketApiGateway
+      Description: Edit Mesages 
+      IntegrationType: AWS_PROXY
+      IntegrationUri:
+        Fn::Sub:
+            arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${MessengerEditFunction.Arn}/invocations
+  
+  MessengerEditRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApiGateway
+      RouteKey: edit
+      AuthorizationType: NONE
+      OperationName: EditMessageRoute
+      Target: !Join
+        - '/'
+        - - 'integrations'
+          - !Ref MessengerEditIntegration 
+  
+ 
   MessengerFetchFunction:
     Type: AWS::Serverless::Function
     Properties:
