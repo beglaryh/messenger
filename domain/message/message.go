@@ -2,6 +2,7 @@ package message
 
 import (
 	"github.com/beglaryh/gocommon/time/offsetdatetime"
+	"github.com/beglaryh/messenger/domain/reaction"
 )
 
 type Message struct {
@@ -12,7 +13,8 @@ type Message struct {
 	RoomId string `json:"roomId"`
 	SentBy string `json:"sentBy"`
 
-	Message  string   `json:"message"`
-	Members  []string `json:"-"`
-	IsEdited bool     `json:"isEdited"`
+	Message   string              `json:"message"`
+	Members   []string            `json:"-"`
+	Reactions []reaction.Reaction `json:"reactions,omitempty"`
+	IsEdited  bool                `json:"isEdited"`
 }
