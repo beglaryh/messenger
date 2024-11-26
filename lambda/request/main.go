@@ -14,10 +14,12 @@ import (
 	"github.com/beglaryh/messenger/domain/connection"
 	"github.com/beglaryh/messenger/domain/editrequest"
 	"github.com/beglaryh/messenger/domain/message"
+	"github.com/beglaryh/messenger/domain/reaction"
 	"github.com/beglaryh/messenger/domain/room"
 	"github.com/beglaryh/messenger/infrastructure/database"
 	"github.com/beglaryh/messenger/lambda/common"
 	"github.com/beglaryh/messenger/presentation/item/fetchresponse"
+	"github.com/beglaryh/messenger/presentation/item/reactionrequestitem"
 	"github.com/beglaryh/messenger/presentation/item/requestitem"
 	"github.com/google/uuid"
 )
@@ -55,15 +57,17 @@ func handler(_ context.Context, r events.APIGatewayWebsocketProxyRequest) (event
 		}
 		return editMessage(edit, &r)
 	case "react":
-		break
+		var request reactionrequestitem.ReactionRequestItem
+		if err := json.Unmarshal(internalMessage, &request); err != nil {
+			return events.APIGatewayProxyResponse{StatusCode: 400, Body: "invalid request"}, nil
+		}
+		return react(request, &r)
 	case "fetch":
 		cursor := event.Message.Message.(string)
 		return fetch(cursor, &r)
 	default:
 		return events.APIGatewayProxyResponse{StatusCode: 400, Body: "illegal request"}, nil
 	}
-
-	return events.APIGatewayProxyResponse{StatusCode: 200}, nil
 }
 
 func createRoom(room room.Room, r *events.APIGatewayWebsocketProxyRequest) (events.APIGatewayProxyResponse, error) {
@@ -253,6 +257,33 @@ func fetch(lastMessage string, r *events.APIGatewayWebsocketProxyRequest) (event
 	return events.APIGatewayProxyResponse{
 		StatusCode: 200,
 	}, nil
+}
+
+func react(request reactionrequestitem.ReactionRequestItem, r *events.APIGatewayWebsocketProxyRequest) (events.APIGatewayProxyResponse, error) {
+	conn, _ := db.GetConnection(r.RequestContext.ConnectionID)
+	msg, err := db.ReactToMessage(request.MID, reaction.Reaction{
+		Type: request.Reaction,
+		By:   conn.UID,
+	})
+	if err != nil {
+		log.Println(err)
+		return events.APIGatewayProxyResponse{StatusCode: 500}, nil
+	}
+	data, _ := json.Marshal(msg)
+	endpoint := common.BaseEndpoint(r)
+	config := cfg
+	config.BaseEndpoint = &endpoint
+	client := apigatewaymanagementapi.NewFromConfig(config)
+
+	_, err = client.PostToConnection(context.TODO(), &apigatewaymanagementapi.PostToConnectionInput{
+		Data:         data,
+		ConnectionId: &conn.ID,
+	})
+	if err != nil {
+		log.Println(err)
+		return events.APIGatewayProxyResponse{StatusCode: 500}, nil
+	}
+	return events.APIGatewayProxyResponse{StatusCode: 200}, nil
 }
 
 func main() {

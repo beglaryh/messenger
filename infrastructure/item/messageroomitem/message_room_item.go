@@ -4,19 +4,21 @@ import (
 	"github.com/beglaryh/gocommon/time/offsetdatetime"
 	"github.com/beglaryh/messenger/domain/message"
 	"github.com/beglaryh/messenger/infrastructure/item"
+	"github.com/beglaryh/messenger/infrastructure/item/reactionitem"
 )
 
 type MessageRoomItem struct {
-	PK         string          `dynamodbav:"pk"`
-	SK         string          `dynamodbav:"sk"`
-	GSI1PK     string          `dynamodbav:"gsi1pk"`
-	GSI1SK     string          `dynamodbav:"gsi1sk"`
-	Message    string          `dynamodbav:"message"`
-	EntityType item.EntityType `dynamodbav:"entityType"`
-	CreatedOn  string          `dynamodbav:"createdOn"`
-	CreatedBy  string          `dynamodbav:"createdBy"`
-	ModifiedOn string          `dynamodbav:"modifiedOn"`
-	IsEdited   bool            `dynamodbav:"isEdited"`
+	PK         string                      `dynamodbav:"pk"`
+	SK         string                      `dynamodbav:"sk"`
+	GSI1PK     string                      `dynamodbav:"gsi1pk"`
+	GSI1SK     string                      `dynamodbav:"gsi1sk"`
+	Message    string                      `dynamodbav:"message"`
+	EntityType item.EntityType             `dynamodbav:"entityType"`
+	CreatedOn  string                      `dynamodbav:"createdOn"`
+	CreatedBy  string                      `dynamodbav:"createdBy"`
+	ModifiedOn string                      `dynamodbav:"modifiedOn"`
+	Reactions  []reactionitem.ReactionItem `dynamodbav:"reactions"`
+	IsEdited   bool                        `dynamodbav:"isEdited"`
 }
 
 const (
@@ -47,6 +49,7 @@ func (item MessageRoomItem) To() message.Message {
 		Message:    item.Message,
 		SentBy:     item.CreatedBy,
 		IsEdited:   item.IsEdited,
+		Reactions:  reactionitem.BatchTo(item.Reactions),
 		CreatedOn:  createdOn,
 		ModifiedOn: modifiedOn,
 	}

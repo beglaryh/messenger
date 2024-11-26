@@ -13,9 +13,11 @@ import (
 	"github.com/beglaryh/gocommon/errors"
 	"github.com/beglaryh/gocommon/optional"
 	"github.com/beglaryh/gocommon/stream"
+	"github.com/beglaryh/gocommon/time/offsetdatetime"
 	"github.com/beglaryh/messenger/domain/connection"
 	request "github.com/beglaryh/messenger/domain/editrequest"
 	"github.com/beglaryh/messenger/domain/message"
+	"github.com/beglaryh/messenger/domain/reaction"
 	"github.com/beglaryh/messenger/domain/room"
 	"github.com/beglaryh/messenger/infrastructure/item"
 	"github.com/beglaryh/messenger/infrastructure/item/connectionheaderitem"
@@ -23,6 +25,7 @@ import (
 	"github.com/beglaryh/messenger/infrastructure/item/member"
 	"github.com/beglaryh/messenger/infrastructure/item/messageroomitem"
 	"github.com/beglaryh/messenger/infrastructure/item/messageuseritem"
+	"github.com/beglaryh/messenger/infrastructure/item/reactionitem"
 	roomitem "github.com/beglaryh/messenger/infrastructure/item/room"
 )
 
@@ -111,16 +114,7 @@ func (db *DB) SaveMessage(message message.Message) error {
 }
 
 func (db *DB) EditMessage(editRequest request.EditRequest) (message.Message, error) {
-	keyEx := expression.Key("pk").Equal(expression.Value(editRequest.MID))
-	exp, _ := expression.NewBuilder().WithKeyCondition(keyEx).Build()
-	input := dynamodb.QueryInput{
-		TableName:                 aws.String(table),
-		KeyConditionExpression:    exp.KeyCondition(),
-		ExpressionAttributeNames:  exp.Names(),
-		ExpressionAttributeValues: exp.Values(),
-	}
-
-	o, err := db.client.Query(context.TODO(), &input)
+	o, err := db.queryMessage(editRequest.MID)
 	if err != nil {
 		log.Println(err)
 		return message.Message{}, errors.DefaultInternalError
@@ -143,6 +137,53 @@ func (db *DB) EditMessage(editRequest request.EditRequest) (message.Message, err
 	if err = db.batchInsertion(&updates); err != nil {
 		log.Println(err)
 		return message.Message{}, errors.DefaultInternalError
+	}
+
+	return roomMessage.To(), nil
+}
+
+func (db *DB) ReactToMessage(mid string, reaction reaction.Reaction) (message.Message, error) {
+	modifiedOn := offsetdatetime.Now()
+	reactionItem := reactionitem.From(reaction)
+	o, err := db.queryMessage(mid)
+	if err != nil {
+		log.Println(err)
+		return message.Message{}, errors.DefaultInternalError
+	}
+
+	updates := make([]map[string]types.AttributeValue, o.Count)
+	var roomMessage messageroomitem.MessageRoomItem
+	updateCount := 0
+	for _, e := range o.Items {
+		eType := e["entityType"]
+		entityType := eType.(*types.AttributeValueMemberS)
+		var userMessage messageuseritem.MessageUserItem
+		if entityType.Value == string(item.RoomMessage) {
+			attributevalue.UnmarshalMap(e, &roomMessage)
+			roomMessage.Reactions = append(roomMessage.Reactions, reactionItem)
+			roomMessage.ModifiedOn = modifiedOn.String()
+			item, err := attributevalue.MarshalMap(roomMessage)
+			if err != nil {
+				log.Println(err)
+				return message.Message{}, errors.DefaultInternalError
+			}
+			updates[updateCount] = item
+		} else {
+			attributevalue.UnmarshalMap(e, &userMessage)
+			userMessage.Reactions = append(userMessage.Reactions, reactionItem)
+			userMessage.ModifiedOn = modifiedOn.String()
+			item, err := attributevalue.MarshalMap(userMessage)
+			if err != nil {
+				log.Println(err)
+				return message.Message{}, errors.DefaultInternalError
+			}
+			updates[updateCount] = item
+		}
+		updateCount += 1
+	}
+
+	if err := db.batchInsertion(&updates); err != nil {
+		return message.Message{}, err
 	}
 
 	return roomMessage.To(), nil
@@ -437,4 +478,17 @@ func getItem[E any](client *dynamodb.Client, primaryKey primaryKey) (E, error) {
 	}
 
 	return item, nil
+}
+
+func (db *DB) queryMessage(mid string) (*dynamodb.QueryOutput, error) {
+	keyEx := expression.Key("pk").Equal(expression.Value(mid))
+	exp, _ := expression.NewBuilder().WithKeyCondition(keyEx).Build()
+	input := dynamodb.QueryInput{
+		TableName:                 aws.String(table),
+		KeyConditionExpression:    exp.KeyCondition(),
+		ExpressionAttributeNames:  exp.Names(),
+		ExpressionAttributeValues: exp.Values(),
+	}
+
+	return db.client.Query(context.TODO(), &input)
 }

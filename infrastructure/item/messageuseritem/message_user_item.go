@@ -4,19 +4,22 @@ import (
 	"github.com/beglaryh/gocommon/time/offsetdatetime"
 	"github.com/beglaryh/messenger/domain/message"
 	"github.com/beglaryh/messenger/infrastructure/item"
+	"github.com/beglaryh/messenger/infrastructure/item/reactionitem"
 )
 
 type MessageUserItem struct {
-	PK         string          `dynamodbav:"pk"`
-	SK         string          `dynamodbav:"sk"`
-	GSI1PK     string          `dynamodbav:"gsi1pk"`
-	GSI1SK     string          `dynamodbav:"gsi1sk"`
-	RoomId     string          `dynamodbav:"roomId"`
-	Message    string          `dynamodbav:"message"`
-	EntityType item.EntityType `dynamodbav:"entityType"`
-	CreatedOn  string          `dynamodbav:"createdOn"`
-	CreatedBy  string          `dynamodbav:"createdBy"`
-	IsEdited   bool            `dyanmodbav:"isEdited"`
+	PK         string                      `dynamodbav:"pk"`
+	SK         string                      `dynamodbav:"sk"`
+	GSI1PK     string                      `dynamodbav:"gsi1pk"`
+	GSI1SK     string                      `dynamodbav:"gsi1sk"`
+	RoomId     string                      `dynamodbav:"roomId"`
+	Message    string                      `dynamodbav:"message"`
+	EntityType item.EntityType             `dynamodbav:"entityType"`
+	CreatedOn  string                      `dynamodbav:"createdOn"`
+	CreatedBy  string                      `dynamodbav:"createdBy"`
+	ModifiedOn string                      `dynamodbav:"modifiedOn"`
+	Reactions  []reactionitem.ReactionItem `dynamodbav:"reactions"`
+	IsEdited   bool                        `dyanmodbav:"isEdited"`
 }
 
 func From(m message.Message) *[]MessageUserItem {
@@ -49,12 +52,15 @@ func To(items *[]MessageUserItem) []message.Message {
 
 func (item *MessageUserItem) To() message.Message {
 	createdOn, _ := offsetdatetime.Parse(item.CreatedOn)
+	modifiedOn, _ := offsetdatetime.Parse(item.ModifiedOn)
 	return message.Message{
-		Id:        item.PK,
-		RoomId:    item.RoomId,
-		SentBy:    item.CreatedBy,
-		Message:   item.Message,
-		IsEdited:  item.IsEdited,
-		CreatedOn: createdOn,
+		Id:         item.PK,
+		RoomId:     item.RoomId,
+		SentBy:     item.CreatedBy,
+		Message:    item.Message,
+		IsEdited:   item.IsEdited,
+		Reactions:  reactionitem.BatchTo(item.Reactions),
+		CreatedOn:  createdOn,
+		ModifiedOn: modifiedOn,
 	}
 }
