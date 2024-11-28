@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/apigatewaymanagementapi"
 	"github.com/beglaryh/gocommon/collection/list/arraylist"
+	"github.com/beglaryh/gocommon/errors"
 	"github.com/beglaryh/gocommon/time/offsetdatetime"
 	"github.com/beglaryh/messenger/domain/connection"
 	"github.com/beglaryh/messenger/domain/editrequest"
@@ -149,34 +150,8 @@ func sendMessage(message message.Message, r *events.APIGatewayWebsocketProxyRequ
 		}, nil
 	}
 
-	connections, err := db.GetConnectionsByRoom(message.RoomId)
-	if err != nil {
-		return events.APIGatewayProxyResponse{
-			StatusCode: 500,
-		}, nil
-	}
-
-	endpoint := common.BaseEndpoint(r)
-	config := cfg
-	config.BaseEndpoint = &endpoint
-	client := apigatewaymanagementapi.NewFromConfig(config)
-
-	data, err := json.Marshal(message)
-	if err != nil {
-		log.Println(err)
+	if err := broadcast(&message, r); err != nil {
 		return events.APIGatewayProxyResponse{StatusCode: 500}, nil
-	}
-
-	for _, connection := range connections {
-		_, err := client.PostToConnection(context.TODO(), &apigatewaymanagementapi.PostToConnectionInput{
-			ConnectionId: &connection.PK,
-			Data:         data,
-		})
-		if err != nil {
-			log.Println("error sending message")
-			log.Println(err)
-			return events.APIGatewayProxyResponse{StatusCode: 500}, nil
-		}
 	}
 
 	return events.APIGatewayProxyResponse{
@@ -189,35 +164,8 @@ func editMessage(request editrequest.EditRequest, r *events.APIGatewayWebsocketP
 	if err != nil {
 		return events.APIGatewayProxyResponse{StatusCode: 500}, nil
 	}
-
-	connections, err := db.GetConnectionsByRoom(message.RoomId)
-	if err != nil {
-		return events.APIGatewayProxyResponse{
-			StatusCode: 500,
-		}, nil
-	}
-
-	endpoint := common.BaseEndpoint(r)
-	config := cfg
-	config.BaseEndpoint = &endpoint
-	client := apigatewaymanagementapi.NewFromConfig(config)
-
-	data, err := json.Marshal(message)
-	if err != nil {
-		log.Println(err)
+	if err := broadcast(&message, r); err != nil {
 		return events.APIGatewayProxyResponse{StatusCode: 500}, nil
-	}
-
-	for _, connection := range connections {
-		_, err := client.PostToConnection(context.TODO(), &apigatewaymanagementapi.PostToConnectionInput{
-			ConnectionId: &connection.PK,
-			Data:         data,
-		})
-		if err != nil {
-			log.Println("error sending message")
-			log.Println(err)
-			return events.APIGatewayProxyResponse{StatusCode: 500}, nil
-		}
 	}
 
 	return events.APIGatewayProxyResponse{
@@ -269,21 +217,42 @@ func react(request reactionrequestitem.ReactionRequestItem, r *events.APIGateway
 		log.Println(err)
 		return events.APIGatewayProxyResponse{StatusCode: 500}, nil
 	}
-	data, _ := json.Marshal(msg)
+	if err := broadcast(&msg, r); err != nil {
+		return events.APIGatewayProxyResponse{StatusCode: 500}, nil
+	}
+	return events.APIGatewayProxyResponse{StatusCode: 200}, nil
+}
+
+func broadcast(message *message.Message, r *events.APIGatewayWebsocketProxyRequest) error {
+	connections, err := db.GetConnectionsByRoom(message.RoomId)
+	if err != nil {
+		log.Println(err)
+		return errors.DefaultInternalError
+	}
+
 	endpoint := common.BaseEndpoint(r)
 	config := cfg
 	config.BaseEndpoint = &endpoint
 	client := apigatewaymanagementapi.NewFromConfig(config)
 
-	_, err = client.PostToConnection(context.TODO(), &apigatewaymanagementapi.PostToConnectionInput{
-		Data:         data,
-		ConnectionId: &conn.ID,
-	})
+	data, err := json.Marshal(message)
 	if err != nil {
 		log.Println(err)
-		return events.APIGatewayProxyResponse{StatusCode: 500}, nil
+		return errors.DefaultInternalError
 	}
-	return events.APIGatewayProxyResponse{StatusCode: 200}, nil
+
+	for _, connection := range connections {
+		_, err := client.PostToConnection(context.TODO(), &apigatewaymanagementapi.PostToConnectionInput{
+			ConnectionId: &connection.PK,
+			Data:         data,
+		})
+		if err != nil {
+			log.Println("error sending message")
+			log.Println(err)
+			return errors.DefaultInternalError
+		}
+	}
+	return nil
 }
 
 func main() {
